@@ -40,7 +40,6 @@ class DataPreprocessor:
 
         imputer = SimpleImputer(columns=numerical_features, strategy="mean")
         dataset_transformed = imputer.fit_transform(dataset_transformed)
-
         return dataset_transformed
 
     def preprocess_categorical_features(self, df, categorical_features):

@@ -13,7 +13,7 @@ def call_preprocessor(selected_dataset, target_variable):
     return X_train, y_train, X_test, y_test
 
 def trainer(X_train, y_train, X_test, y_test):
-    model_selector = TextClassifier('LogisticRegression')
+    model_selector = TextClassifier('SVM')
     model_selector.select_model(X_train,y_train,X_test,y_test)
 
 def main():
