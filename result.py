@@ -12,6 +12,8 @@ def process_and_compare(directory):
     # Dictionary to store aggregated values
     aggregated_values = {}
     individual_predictions = []
+    individual_truth = []
+    individual_acc = []
     true_values = None
 
     # Iterate through files in the directory
@@ -26,11 +28,12 @@ def process_and_compare(directory):
 
                 # Extract 'pred' list from the dictionary
                 pred_list = data.get('pred', [])
+                true_list = data.get('true',[])
+                acc = data.get('acc')
                 individual_predictions.append(pred_list)
+                individual_truth.append(true_list)
+                individual_acc.append(acc)
 
-                # Extract 'true' values from the first file
-                if true_values is None:
-                    true_values = data.get('true', [])
 
                 # Aggregate 'pred' lists
                 for index, value in enumerate(pred_list):
@@ -47,11 +50,11 @@ def process_and_compare(directory):
         majority_value = counter.most_common(1)[0][0]
         aggregated_values[index] = majority_value
 
-    return aggregated_values, individual_predictions, true_values
+    return aggregated_values, individual_predictions, true_values, individual_acc, individual_truth
 
 
 # Call the function and get the aggregated values, individual predictions, and true values
-aggregated_preds, individual_preds, true_values = process_and_compare(directory)
+aggregated_preds, individual_preds, true_values,individual_acc,individual_truth = process_and_compare(directory)
 
 # Print 'true' values
 print("True Values:")
@@ -62,10 +65,19 @@ print("\nAggregated Predictions:")
 print(aggregated_preds)
 print("\nIndividual Predictions:")
 # Print individual predictions
+c = 0
 for filename, preds in enumerate(individual_preds):
     print(f"File {filename + 1}:")
+    print("Y Pred: \n")
     print(preds)
     print()
+    print("Accuracy: \n")
+    print(individual_acc[c])
+    print()
+    print("Y Test: \n")
+    print(individual_truth[c])
+    print()
+    c += 1
 
 # Calculate accuracy score using sklearn
 accuracy = accuracy_score(true_values, [aggregated_preds[i] for i in range(len(true_values))])

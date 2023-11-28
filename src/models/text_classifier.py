@@ -23,5 +23,4 @@ class TextClassifier:
         else:
             raise ValueError("Invalid model name provided in the configuration file.")
         result = model.train_and_test()
-
         return result

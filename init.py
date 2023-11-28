@@ -40,4 +40,3 @@ if problem_type=="Text":
     os.system(f"ray job submit --no-wait --working-dir kerays -- python3 bagger.py --problemType {problem_type} --dataset {selected_dataset} --target {target_variable} --model LogisticRegression")
     os.system(f"ray job submit --no-wait --working-dir kerays -- python3 bagger.py --problemType {problem_type} --dataset {selected_dataset} --target {target_variable} --model SVM")
     os.system(f"ray job submit --no-wait --working-dir kerays -- python3 bagger.py --problemType {problem_type} --dataset {selected_dataset} --target {target_variable} --model RandomForest")
-    os.system("python3 kerays/result.py")
