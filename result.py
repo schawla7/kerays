@@ -9,12 +9,9 @@ directory = '/home/schawla7/kerays/agg_outputs'
 
 # Function to read JSON files, aggregate 'pred' lists, and compare with 'true'
 def process_and_compare(directory):
-    # Dictionary to store aggregated values
     aggregated_values = {}
     individual_predictions = []
-    individual_truth = []
-    individual_acc = []
-    true_values = None
+    true_values = []
 
     # Iterate through files in the directory
     for filename in os.listdir(directory):
@@ -28,12 +25,11 @@ def process_and_compare(directory):
 
                 # Extract 'pred' list from the dictionary
                 pred_list = data.get('pred', [])
-                true_list = data.get('true',[])
-                acc = data.get('acc')
                 individual_predictions.append(pred_list)
-                individual_truth.append(true_list)
-                individual_acc.append(acc)
 
+                # Extract 'true' values from each file
+                true_val = data.get('true', [])
+                true_values.append(true_val)
 
                 # Aggregate 'pred' lists
                 for index, value in enumerate(pred_list):
@@ -50,37 +46,25 @@ def process_and_compare(directory):
         majority_value = counter.most_common(1)[0][0]
         aggregated_values[index] = majority_value
 
-    return aggregated_values, individual_predictions, true_values, individual_acc, individual_truth
+    return aggregated_values, individual_predictions, true_values
 
 
 # Call the function and get the aggregated values, individual predictions, and true values
-aggregated_preds, individual_preds, true_values,individual_acc,individual_truth = process_and_compare(directory)
+aggregated_preds, individual_preds, true_values = process_and_compare(directory)
 
-# Print 'true' values
-print("True Values:")
-print(true_values)
+# Print 'true' values from all dictionaries
+print("True Values from all Dictionaries:")
+for idx, true_val in enumerate(true_values):
+    print(f"Dictionary {idx + 1}: {true_val}")
 
-# Print aggregated values
-print("\nAggregated Predictions:")
-print(aggregated_preds)
-print("\nIndividual Predictions:")
-# Print individual predictions
-c = 0
-for filename, preds in enumerate(individual_preds):
-    print(f"File {filename + 1}:")
-    print("Y Pred: \n")
-    print(preds)
-    print()
-    print("Accuracy: \n")
-    print(individual_acc[c])
-    print()
-    print("Y Test: \n")
-    print(individual_truth[c])
-    print()
-    c += 1
+# Calculate and print accuracies for each dictionary against its true values
+for idx, pred_values in enumerate(individual_preds):
+    accuracy = accuracy_score(true_values[idx], pred_values)
+    print(f"\nAccuracy for Dictionary {idx + 1}: {accuracy}")
 
-# Calculate accuracy score using sklearn
-accuracy = accuracy_score(true_values, [aggregated_preds[i] for i in range(len(true_values))])
+# Choose a true value to compare with aggregated predictions
+chosen_true = true_values[0]  # Change the index to choose a different true value for comparison
 
-# Print accuracy score
-print(f"\nAccuracy Score: {accuracy}")
+# Calculate accuracy of aggregated predictions against the chosen true value
+aggregated_accuracy = accuracy_score(chosen_true, [aggregated_preds[i] for i in range(len(chosen_true))])
+print(f"\nAggregated Prediction Accuracy against Chosen True Value: {aggregated_accuracy}")

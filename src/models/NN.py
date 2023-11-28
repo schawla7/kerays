@@ -11,19 +11,19 @@ class DistributedNeuralNetwork:
         self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
 
     def train(self, X_train, y_train, params=None):
-        if params is None:
-            params = {
-                'hidden_layer_sizes': [(100,), (50, 50), (100, 50, 100)],
-                'activation': ['relu', 'tanh', 'logistic'],
-                'solver': ['adam', 'sgd'],
-                'alpha': [0.0001, 0.001, 0.01]
-            }
-
-        randomized_search = RandomizedSearchCV(
-            self.model, params, cv=5, scoring='accuracy', n_iter=10, random_state=42
-        )
-        randomized_search.fit(X_train, y_train)
-        self.model = randomized_search.best_estimator_
+        # if params is None:
+        #     params = {
+        #         'hidden_layer_sizes': [(100,), (50, 50), (100, 50, 100)],
+        #         'activation': ['relu', 'tanh', 'logistic'],
+        #         'solver': ['adam', 'sgd'],
+        #         'alpha': [0.0001, 0.001, 0.01]
+        #     }
+        #
+        # randomized_search = RandomizedSearchCV(
+        #     self.model, params, cv=5, scoring='accuracy', n_iter=10, random_state=42
+        # )
+        self.model.fit(X_train, y_train)
+        # self.model = randomized_search.best_estimator_
         self.trained = True
 
     def test(self, X_test):

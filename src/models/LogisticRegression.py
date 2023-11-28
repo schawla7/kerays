@@ -12,17 +12,17 @@ class DistributedLogisticRegression:
         self.trained = False
 
     def train(self, X_train, y_train, params=None):
-        if params is None:
-            params = {
-                'C': [0.001, 0.01, 0.1, 1, 10, 100],
-                'penalty': ['l2']
-            }
-
-        randomized_search = RandomizedSearchCV(
-            self.model, params, cv=15, scoring='accuracy', n_iter=10, random_state=42
-        )
-        randomized_search.fit(X_train, y_train)
-        self.model = randomized_search.best_estimator_
+        # if params is None:
+        #     params = {
+        #         'C': [0.001, 0.01, 0.1, 1, 10, 100],
+        #         'penalty': ['l2']
+        #     }
+        #
+        # randomized_search = RandomizedSearchCV(
+        #     self.model, params, cv=15, scoring='accuracy', n_iter=10, random_state=42
+        # )
+        self.model.fit(X_train, y_train)
+        # self.model = randomized_search.best_estimator_
         self.trained = True
 
     def test(self, X_test):
