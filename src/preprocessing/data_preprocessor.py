@@ -6,7 +6,7 @@ from ray.data.preprocessors import StandardScaler, OneHotEncoder, SimpleImputer,
 class DataPreprocessor:
     def __init__(self,target):
         self.target = target
-        ray.init(num_cpus=4)
+        ray.init()
 
     def download_dataset(self, file_path):
         df = ray.data.read_csv(file_path)

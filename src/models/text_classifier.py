@@ -1,8 +1,3 @@
-from joblib import parallel_backend # added line.
-from ray.util.joblib import register_ray # added line.
-from sklearn.svm import SVC
-from sklearn.neural_network import MLPClassifier
-
 from src.models.DecisionTree import DistributedDecisionTree
 from src.models.LogisticRegression import DistributedLogisticRegression
 from src.models.RandomForest import DistributedRandomForest
@@ -27,4 +22,6 @@ class TextClassifier:
             model = DistributedNeuralNetwork(X_train,y_train,X_test,y_test)
         else:
             raise ValueError("Invalid model name provided in the configuration file.")
-        model.train_and_test()
+        result = model.train_and_test()
+
+        return result

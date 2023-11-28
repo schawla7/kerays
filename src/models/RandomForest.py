@@ -47,6 +47,9 @@ class DistributedRandomForest:
 
             print(f"Accuracy: {accuracy}")
 
+            data = {'acc':accuracy,'pred':predictions,'true':self.y_test}
+            return data
+
     def calculate_metrics(self, y_true, y_pred):
         accuracy = accuracy_score(y_true, y_pred)
         return accuracy

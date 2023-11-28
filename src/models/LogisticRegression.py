@@ -48,3 +48,6 @@ class DistributedLogisticRegression:
             accuracy = self.calculate_metrics(self.y_test, predictions)
 
             print(f"Accuracy: {accuracy}")
+
+            data = {'acc':accuracy,'pred':predictions,'true':self.y_test}
+            return data
