@@ -1,0 +1,288 @@
+import os
+import torch
+import argparse
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, models, transforms
+import numpy as np
+from tempfile import TemporaryDirectory
+import ray.train as train
+from ray.train import Checkpoint
+from ray.train.torch import TorchTrainer
+from ray.train import ScalingConfig, RunConfig, CheckpointConfig
+import pandas as pd
+import json
+
+# Data augmentation and normalization for training
+# Just normalization for validation
+data_transforms = {
+    "train": transforms.Compose(
+        [
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    ),
+    "val": transforms.Compose(
+        [
+            transforms.Resize(224),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    ),
+}
+
+def download_datasets():
+    os.system(
+        "wget https://download.pytorch.org/tutorial/hymenoptera_data.zip"
+    )
+    os.system("unzip hymenoptera_data.zip")
+
+# Download and build torch datasets
+def build_datasets():
+    torch_datasets = {}
+    for split in ["train", "val"]:
+        torch_datasets[split] = datasets.ImageFolder(
+            os.path.join("hymenoptera_data", split), data_transforms[split]
+        )
+    return torch_datasets
+
+train_loop_config = {
+    "input_size": 224,  # Input image size (224 x 224)
+    "batch_size": 32,  # Batch size for training
+    "num_epochs": 10,  # Number of epochs to train for
+    "lr": 0.001,  # Learning Rate
+    "momentum": 0.9,  # SGD optimizer momentum
+    "modelname": "",
+}
+
+
+
+# Option 1: Initialize model with pretrained weights
+def initialize_model(modelname):
+    
+    if modelname == "Resnet":
+        # Load pretrained model params
+        model = models.resnet50(pretrained=True)
+    if modelname == "Alexnet":
+        # Load pretrained model params
+        model = models.alexnet(pretrained=True)
+    if modelname == "Squeezenet":
+        model = models.squeezenet1_1(pretrained=True)
+    if modelname == "Mobilenet":
+        model = models.mobilenet_v2(pretrained=True)
+
+    # Replace the original classifier with a new Linear layer
+    #num_features = model.fc.in_features
+    #model.fc = nn.Linear(num_features, 2)
+
+    # Ensure all params get updated during finetuning
+    for param in model.parameters():
+        param.requires_grad = True
+    return model
+
+def initialize_model_from_checkpoint(checkpoint: Checkpoint):
+    with checkpoint.as_directory() as tmpdir:
+        state_dict = torch.load(os.path.join(tmpdir, "checkpoint.pt"))
+    alexnet50 = initialize_model()
+    alexnet50.load_state_dict(state_dict["model"])
+    return alexnet50
+
+
+
+
+
+def evaluate(logits, labels):
+    _, preds = torch.max(logits, 1)
+    corrects = torch.sum(preds == labels).item()
+    return corrects
+
+
+def train_loop_per_worker(configs):
+    import warnings
+
+    warnings.filterwarnings("ignore")
+
+    # Calculate the batch size for a single worker
+    worker_batch_size = configs["batch_size"] // train.get_context().get_world_size()
+
+    # Download dataset once on local rank 0 worker
+    if train.get_context().get_local_rank() == 0:
+        print("Downloading Dataset")
+        download_datasets()
+    torch.distributed.barrier()
+
+    # Build datasets on each worker
+    torch_datasets = build_datasets()
+
+    # Prepare dataloader for each worker
+    dataloaders = dict()
+    dataloaders["train"] = DataLoader(
+        torch_datasets["train"], batch_size=worker_batch_size, shuffle=True
+    )
+    dataloaders["val"] = DataLoader(
+        torch_datasets["val"], batch_size=worker_batch_size, shuffle=False
+    )
+
+    # Distribute
+    dataloaders["train"] = train.torch.prepare_data_loader(dataloaders["train"])
+    dataloaders["val"] = train.torch.prepare_data_loader(dataloaders["val"])
+
+    device = train.torch.get_device()
+
+    # Prepare DDP Model, optimizer, and loss function
+    model = initialize_model(configs["modelname"])
+    model = train.torch.prepare_model(model)
+
+    optimizer = optim.SGD(
+        model.parameters(), lr=configs["lr"], momentum=configs["momentum"]
+    )
+    criterion = nn.CrossEntropyLoss()
+
+    # Start training loops
+    for epoch in range(configs["num_epochs"]):
+        # Each epoch has a training and validation phase
+        for phase in ["train", "val"]:
+            if phase == "train":
+                model.train()  # Set model to training mode
+            else:
+                model.eval()  # Set model to evaluate mode
+
+            running_loss = 0.0
+            running_corrects = 0
+
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # forward
+                with torch.set_grad_enabled(phase == "train"):
+                    # Get model outputs and calculate loss
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+
+                    # backward + optimize only if in training phase
+                    if phase == "train":
+                        loss.backward()
+                        optimizer.step()
+
+                # calculate statistics
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += evaluate(outputs, labels)
+
+            size = len(torch_datasets[phase]) // train.get_context().get_world_size()
+            epoch_loss = running_loss / size
+            epoch_acc = running_corrects / size
+
+            if train.get_context().get_world_rank() == 0:
+                print(
+                    "Epoch {}-{} Loss: {:.4f} Acc: {:.4f}".format(
+                        epoch, phase, epoch_loss, epoch_acc
+                    )
+                )
+
+            # Report metrics and checkpoint every epoch
+            if phase == "val":
+                with TemporaryDirectory() as tmpdir:
+                    state_dict = {
+                        "epoch": epoch,
+                        "model": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                    }
+                    torch.save(state_dict, os.path.join(tmpdir, "checkpoint.pt"))
+                    train.report(
+                        metrics={"loss": epoch_loss, "acc": epoch_acc},
+                        checkpoint=Checkpoint.from_directory(tmpdir),
+                    )
+
+
+if __name__=="__main__":
+    # Creating argument parser
+    parser = argparse.ArgumentParser(description="Script for handling image classification")
+
+    parser.add_argument("-m", "--targetModel", type=str, help="Name of the model to be used [Resnet, Alexnet]", required=True)
+    
+    # Parsing arguments
+    args = parser.parse_args()
+
+    target_model = args.targetModel
+    
+    # Scale out model training across 1 GPUs.
+    scaling_config = ScalingConfig(
+        num_workers=2, use_gpu=False, resources_per_worker={"CPU": 1}
+    )
+
+    # Save the latest checkpoint
+    checkpoint_config = CheckpointConfig(num_to_keep=1)
+
+    # Set experiment name and checkpoint configs
+    run_config = RunConfig(
+        name="finetune-alexnet",
+        storage_path="/tmp/ray_results",
+        checkpoint_config=checkpoint_config,
+    )
+
+    train_loop_config["modelname"] = target_model
+    trainer = TorchTrainer(
+        train_loop_per_worker=train_loop_per_worker,
+        train_loop_config=train_loop_config,
+        scaling_config=scaling_config,
+        run_config=run_config,
+    )
+
+    result = trainer.fit()
+    print(result)
+    
+    checkpoint = torch.load(result.checkpoint.path+"/checkpoint.pt")
+    print(checkpoint['model'].keys())
+    resnet50 = initialize_model(target_model)
+
+    # create new OrderedDict that does not contain `module.`
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in checkpoint['model'].items():
+        name = k[7:] # remove `module.`
+        new_state_dict[name] = v
+    # load params
+    resnet50.load_state_dict(new_state_dict)
+    model = resnet50
+    device = torch.device("cpu")
+    
+    model = model.to(device)
+    model.eval()
+
+    #download_datasets()
+    # Set the seed for reproducibility
+    seed = 42
+    torch.manual_seed(seed)
+    torch_datasets = build_datasets()
+    dataloader = DataLoader(torch_datasets["val"], batch_size=32, num_workers=4, shuffle=False, worker_init_fn=torch.manual_seed(seed))
+    corrects = 0
+    predictions = []
+    r_labels = []
+    ret = {}
+    i = 0
+    for inputs, labels in dataloader:
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        preds = model(inputs)
+        _, y_pred = torch.max(preds, 1)
+        predictions.append(y_pred)
+        r_labels.append(labels)
+        corrects += evaluate(preds, labels)
+        i=i+1
+
+    print("Accuracy: ", corrects / len(dataloader.dataset))
+    ret['acc'] = corrects / len(dataloader.dataset)
+    ret['pred'] = torch.cat(predictions).tolist()
+    ret['true'] = torch.cat(r_labels).tolist()
+    # Write dictionary to a JSON file
+    with open(f'result/output-{target_model}.json', 'w') as json_file:
+        json.dump(ret, json_file)
+    print(ret)
